@@ -43,54 +43,77 @@ varargout{1} = handles.output;
 
 % --- Executes on button press in loadpb.
 function loadpb_Callback(hObject, eventdata, handles)
+
+%[FILENAME, PATHNAME, FILTERINDEX] = uigetfile(FILTERSPEC, TITLE)
 [filename, pathname] = uigetfile({'*.jpg;*.png;*.bmp','Image Files (*.jpg, *.png, *.bmp)'});
     if isequal(filename,0)
         return;
     end
+    %Citanje slike apsolutnom putanjom
     img = imread(fullfile(pathname, filename));
     handles.img = img;
+    %priakzivanaje slike na axes1
     axes(handles.axes1);
     imshow(img);
     guidata(hObject, handles);
 % --- Executes on button press in contrastpb.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Ideja je bila da pritiskom na Dugme contrastpb program odradi         %
+% binarizaciju sa pragom skaliranim 0-1, medjutim stavio sam u radiobox %
+% grupu i ovu modifikaciju, pa dugme contrastpb vise ne postoji         %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function contrastpb_Callback(hObject, eventdata, handles)
     if ~isfield(handles, 'img')
-        errordlg('Load an image first');
+        errordlg('Ucitaj sliku prvo');
         return;
     end
+    %Prag ili treshold mi odredjuje koji intezitewt pixela ce se videti sa
+    %crnom a koji sa belom bojom, threshold je skaliran
     threshold = str2double(get(handles.edit1, 'String'));
     if isnan(threshold) || threshold < 0 || threshold > 1
-        errordlg('Enter a valid threshold between 0 and 1');
+        errordlg('Unesite skaliran prag (0, 1)');
         return;
     end
     img = handles.img;
-    binarized_img = imbinarize(rgb2gray(img), threshold);
+    %imbinarize Binarize grayscale 2D image or 3D volume by thresholding.
+    %BW = imbinarize(I)
+    binarizovana_slika = imbinarize(rgb2gray(img), threshold);
 
     axes(handles.axes2);
-    imshow(binarized_img);
-    handles.binarized_img = binarized_img;
+    imshow(binarizovana_slika);
+    handles.binarized_img = binarizovana_slika;
 
 % --- Executes on button press in transformacija.
 function transformacija_Callback(hObject, eventdata, handles)
+%Provera da li je ucitana slika prvo 
     if ~isfield(handles, 'img')
-        errordlg('Load an image first');
+        errordlg('Ucitaj prvo sliku');
         return;
     end
     
-    % Get the selected transformation
-    selectedTransformation = get(get(handles.uibuttongroup2, 'SelectedObject'), 'Tag');
+    % Uzimanje radiobox transformacije
+    modifikacija = get(get(handles.uibuttongroup2, 'SelectedObject'), 'Tag');
     
-    % Define the masks
+    % definisanje maski filtera
+    % uzeo sam 4 filtera sa vezbi koji su mi bili najbolje radili
     laplace4Mask = [0 1 0; 1 -4 1; 0 1 0];
     laplace8Mask = [1 1 1; 1 -8 1; 1 1 1];
     sobel1Mask = [-1 -2 -1; 0 0 0; 1 2 1];
     sobel2Mask = [-1 0 1; -2 0 2; -1 0 1];
     
     img = handles.img;
+    %pretvaranje u sivo
     imgGray = rgb2gray(img);
     
-    % Apply the selected transformation
-    switch selectedTransformation
+    % transformacija
+    %Koristimo funkciju imfilter koji visedimenzionalni niz A filtrira
+    %visedim maatricom B i 3. argument je opcioni
+    % replicate: To eliminate the zero-padding artifacts around the edge of the image, 
+    % imfilter offers an alternative boundary padding method called border replication. In border replication, 
+    % the value of any pixel outside the image is determined by replicating the value from the nearest border 
+    % pixel. This is illustrated in the following figure.
+    % Pikseli izvan granica dobijaju vrednost najbližeg graničnog piksela.
+    switch modifikacija
         case 'laplace4'
             transformedImg = imfilter(imgGray, laplace4Mask, 'replicate');
         case 'laplace8'
@@ -100,80 +123,105 @@ function transformacija_Callback(hObject, eventdata, handles)
         case 'sobel2'
             transformedImg = imfilter(imgGray, sobel2Mask, 'replicate');
         case 'binarization'
-            % Get threshold value from edit1
+            % uzimam prag / treshold iz edit1
             threshold = str2double(get(handles.edit1, 'String'));
             if isnan(threshold)
-                errordlg('Please enter a valid numeric threshold');
+                errordlg('Unesi validan prag (0 - 255)');
                 return;
             end
             
-            % Binarize the image
+            % Binarizacija slike
             transformedImg = imbinarize(imgGray, threshold / 255);
     end
     
-    % Display the transformed image in axes2
+    % priakz na axes2
     axes(handles.axes2);
     imshow(transformedImg);
     
-    % Save the transformed image and set the flag
+    % sacuvati sliku az dalju upotrebu u axes2
     handles.transformedImg = transformedImg;
     handles.imageSource = 'transformation';
     guidata(hObject, handles);
 
 
 function isecitablicu_Callback(hObject, eventdata, handles)
-    % Check if there is an image in axes2
+    % provera da li je nesto u axes2 (da li je uradjena modifikacija)
+    %u prvoj verziji je bilo 2 mogucnosti editovanja slike: preko
+    %laplace/sobela u radiobox grupi ili na button za binarizaciju, ali
+    %sada je to samo 1 opcija u transformedImg
     if isfield(handles, 'transformedImg')
         img = handles.transformedImg;
-    elseif isfield(handles, 'binarized_img')
+    elseif isfield(handles, 'binarizovana_slika')
         img = handles.binarized_img;
     elseif isfield(handles, 'img')
         img = handles.img;
     else
-        errordlg('No image loaded');
+        errordlg('Nije ucitana slika');
         return;
     end
     
-    % Convert to grayscale if necessary
+    % u sivo konverzija ako nije radjena vec
     if size(img, 3) == 3
         imgGray = rgb2gray(img);
     else
         imgGray = img;
     end
 
-    % Use edge detection to find the edges in the image
+    % detekcija ivica funkcijom edge. Vise o funkciji u prezentaciji
+    %Canny je najgrublja za potiskovanje suma, a u tablicama ne bi trebaloi
+    %da ima previse suma pa sam odabrao ovu
+    % edge prima sliku u sivoj skali i vracca binarnu sliku gde su pikseli koji pripadaju 
+    % ivicama markirani sa 1 (beli pikseli), a ostali pikseli sa 0 (crni pikseli)
     edges = edge(imgGray, 'Canny');
     
-    % Dilate the edges to close gaps
+    % structuring element
+    %rectangle Oblik strukturnog elementa velicina 5x20 pixela
+    % pravougaonik se koristi za prosirenje aka dilataciju ivica slike, a
+    % edge je nasao ivice vec gore
     se = strel('rectangle', [5, 20]);
+
+    %imdilate ovo se koristi za prosiranje binarne slike elementom
+    %pravougaonik sto sam gore definisao
+    
+    % Dilatacija je u matlabu, po definiciji morfoloska operacija koja prosiri bele regione  na slici
     edgesDilated = imdilate(edges, se);
     
-    % Find contours and bounding boxes
+    % bwboundaries pronalazi granice povezanih komponenti u slici koja je
+    % binarna, mi smo je vec binarizovali, 'noholes' granice se traze samo 
+    % za spoljne regione (bez unutrašnjih rupa).
+    % Funkcija bwboundaries vraća dve promenljive:
+
+    %B     niz koji ima koordinate granica svake povezane komponente
+    %L    label matrix gde su pikseli svake povezane komponente markirani jedinstvenim celobrojnimsa vrednostima
     [B, L] = bwboundaries(edgesDilated, 'noholes');
+    % regionprops vrqaca strukturu nizova gde svaki element sadrzi osobine jedne 
+    % povezane komponente ( kao što su bounding box i površina))
     stats = regionprops(L, 'BoundingBox', 'Area');
     
     if isempty(stats)
-        errordlg('No regions found');
+        errordlg('Nema pronadjenih regiuona linija 202, funkcija je regionprops (proveri jel dobra area!!!)');
         return;
     end
     
-    % Filter out small regions that are unlikely to be license plates
-    minArea = 1000;  % Adjust this threshold based on your images
+    % minimalna povrsina koju ne zelim da detektujem, sto mislim da nije
+    % tablica
+    minArea = 1000;  % ovo varira po slici, mogao bih napraviti edit2 kao sto unosim
+    %threshold za binarizaciju
     stats = stats([stats.Area] > minArea);
     
-    % Assume the largest bounding box is the license plate
+    % 
     if isempty(stats)
-        errordlg('No sufficiently large regions found');
+        errordlg('nista nije nadjeno, sve je manje od minarea');
         return;
     end
     
     [~, idx] = max([stats.Area]);
     boundingBox = stats(idx).BoundingBox;
     
-    % Crop the image to the bounding box
+    % iseci sliku 
     licensePlate = imcrop(img, boundingBox);
     
-    % Display the license plate in axes3
+    % prikazi je na a axes3
     axes(handles.axes3);
     imshow(licensePlate);
     handles.licensePlate = licensePlate;
@@ -240,26 +288,25 @@ function sobel2_Callback(hObject, eventdata, handles)
 
 % --- Executes on button press in tablicautekst.
 function tablicautekst_Callback(hObject, eventdata, handles)
-    % Retrieve the image from axes3
+    % slika iz axes3
+    %children parametar-  sadrzi handleove svih  objekata koji 
+    % su deca datog axes objekta.  plotovovi, linije,
+    % tekstove, slike nacrtani unutar tog axes objekta. 
     axes3Children = get(handles.axes3, 'Children');
     if isempty(axes3Children)
-        errordlg('No image found in axes3. Please crop the license plate first.');
+        errordlg('prvo iseci tablicu na axes3');
         return;
     end
-    
-    % Assuming the image is the only child of axes3
     licensePlate = getimage(axes3Children);
-    
     if isempty(licensePlate)
-        errordlg('No image found in axes3. Please crop the license plate first.');
+        errordlg('iseci sliku na axes3');
         return;
     end
-    
-    % Perform OCR on the license plate image
+    % OCR - PREZENTACIJA
     ocrResults = ocr(licensePlate);
     detectedText = strtrim(ocrResults.Text);
     
-    % Display the detected text in the static text field
+    % prikaz rezultata
     set(handles.vrednosttext, 'String', detectedText);
 
 
@@ -272,7 +319,8 @@ function tablicautekst_Callback(hObject, eventdata, handles)
 % --- Executes on button press in rucnoseci.
 function rucnoseci_Callback(hObject, eventdata, handles)
 
-    % Check if there is an image in axes2
+    % ovde secem rucno tablicu jer kod nekih slika minarea je losa pa da ne
+    % moram da je menjam
     if isfield(handles, 'transformedImg') || isfield(handles, 'binarized_img')
         if isfield(handles, 'transformedImg')
             img = handles.transformedImg;
@@ -282,30 +330,31 @@ function rucnoseci_Callback(hObject, eventdata, handles)
     elseif isfield(handles, 'img')
         img = handles.img;
     else
-        errordlg('No image loaded');
+        errordlg('nije ucitana slika');
         return;
     end
     
-    % Display the image in axes2 to ensure ginput works on the correct image
+    
     axes(handles.axes2);
     imshow(img);
     
-    % Get two points from the user
+   
     [x, y] = ginput(2);
     
-    % Calculate the bounding box
+ 
     x1 = min(x);
     y1 = min(y);
     x2 = max(x);
     y2 = max(y);
+    %pravim dimenzije crop slike
     width = x2 - x1;
     height = y2 - y1;
     boundingBox = [x1, y1, width, height];
     
-    % Crop the image to the bounding box
+    % cropa
     licensePlate = imcrop(img, boundingBox);
     
-    % Display the license plate in axes3
+    % priakz
     axes(handles.axes3);
     imshow(licensePlate);
     handles.licensePlate = licensePlate;
